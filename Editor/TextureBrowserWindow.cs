@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEditor.UIElements;
 using UnityEngine;
@@ -18,6 +19,7 @@ namespace LowEndGames.TextureBrowser
         private const string ThumbnailSizeKey = "TextureBrowser_ThumbnailSize";
         private const string DefaultShaderKey = "TextureBrowser_DefaultShader";
         private const string ShaderMainTexKeywordKey = "TextureBrowser_DefaultShaderMainTexKeyword";
+        private const string FavouritesKey = "TextureBrowser_Favourites";
 
         private const string DefaultTextureDirectory = "Assets/Textures";
         private const string DefaultMaterialDirectory = "Assets/Materials";
@@ -31,13 +33,43 @@ namespace LowEndGames.TextureBrowser
         private static int ThumbnailSize => EditorPrefs.GetInt(ThumbnailSizeKey, DefaultThumbnailSize);
 
         private Vector2 m_scroll;
-        private VisualElement m_textureList;
-        private Texture2D m_draggedTexture;
+        private TextureInfo m_draggedTexture;
         private Vector2 m_dragStartPosition;
         private string m_searchString;
-        private readonly List<Texture2D> m_textures = new();
-        private readonly List<Material> m_materials = new();
         private Texture2D m_materialIcon;
+        private Texture2D m_favouriteIcon;
+        private Texture2D m_usedIcon;
+        
+        private VisualElement m_textureListView;
+
+        private readonly List<TextureInfo> m_textures = new();
+        private readonly List<Material> m_materials = new();
+        private readonly List<string> m_favourites = new();
+
+        [Flags]
+        private enum FilterFlags
+        {
+            None = 1 << 0,
+            Favourites = 1 << 1,
+            Used = 1 << 2,
+        }
+        
+        private FilterFlags m_filter = FilterFlags.None;
+
+        private static StyleSheet _styleSheet; // for settings provider
+
+        private class TextureInfo
+        {
+            public Texture2D Texture { get; }
+            public Material Material { get; set; }
+            public bool IsFavourite { get; set; }
+            public VisualElement Element { get; set; }
+
+            public TextureInfo(Texture2D tex)
+            {
+                Texture = tex;
+            }
+        }
 
         [MenuItem("Low End Games/Texture Browser")]
         private static void Open()
@@ -51,9 +83,22 @@ namespace LowEndGames.TextureBrowser
         
         private void OnEnable()
         {
+            _styleSheet = m_styleSheet; // for settings provider, hacky but whatever
+            
             m_materialIcon = EditorGUIUtility.IconContent("Material Icon").image as Texture2D;
+            m_favouriteIcon = EditorGUIUtility.IconContent("Favorite").image as Texture2D;
+            m_usedIcon = EditorGUIUtility.IconContent("d_TerrainInspector.TerrainToolSplat On").image as Texture2D;
+
+            m_favourites.Clear();
+            m_favourites.AddRange(EditorPrefs.GetString(FavouritesKey, "").Split(","));
         }
-        
+
+        private void OnDisable()
+        {
+            // cleanup statics
+            _styleSheet = null;
+        }
+
         private void CreateGUI()
         {
             var root = rootVisualElement;
@@ -67,17 +112,62 @@ namespace LowEndGames.TextureBrowser
             new ToolbarSearchField { value = m_searchString }
                 .WithClasses("search-field")
                 .AddTo(toolbar)
-                .RegisterValueChangedCallback((e) =>
+                .RegisterValueChangedCallback(e =>
                 {
                     m_searchString = e.newValue;
                     PopulateList();
                 });
 
+            var faveToggle = new ToolbarToggle()
+                {
+                    value = m_filter.HasFlag(FilterFlags.Favourites),
+                    tooltip = "Show only Favourites"
+                }
+                .AddTo(toolbar);
+
+            faveToggle.Add(new Image() { image = m_favouriteIcon });
+            faveToggle.RegisterValueChangedCallback(e =>
+            {
+                if (e.newValue)
+                {
+                    m_filter |= FilterFlags.Favourites;
+                }
+                else
+                {
+                    m_filter &= ~FilterFlags.Favourites;
+                }
+
+                PopulateList();
+            });
+            
+
+            var usedToggle = new ToolbarToggle()
+                {
+                    value = m_filter.HasFlag(FilterFlags.Favourites),
+                    tooltip = "Show only textures used in open scenes"
+                }
+                .AddTo(toolbar);
+
+            usedToggle.Add(new Image() { image = m_usedIcon });
+            usedToggle.RegisterValueChangedCallback(e =>
+            {
+                if (e.newValue)
+                {
+                    m_filter |= FilterFlags.Used;
+                }
+                else
+                {
+                    m_filter &= ~FilterFlags.Used;
+                }
+
+                PopulateList();
+            });
+            
             new ToolbarButton(() =>
                 {
                     RefreshTextures();
+                    CacheMaterials();
                     PopulateList();
-
                 })
                 {
                     iconImage = EditorGUIUtility.IconContent("Refresh").image as Texture2D,
@@ -87,13 +177,13 @@ namespace LowEndGames.TextureBrowser
             
             // texture grid
 
-            m_textureList = new ScrollView(ScrollViewMode.Vertical).AddTo(root);
-            m_textureList.AddToClassList("texture-list-container");
-            m_textureList.contentContainer.AddToClassList("texture-list");
+            m_textureListView = new ScrollView(ScrollViewMode.Vertical).AddTo(root);
+            m_textureListView.AddToClassList("texture-list-container");
+            m_textureListView.contentContainer.AddToClassList("texture-list");
             
             // footer 
 
-            var footer = new Toolbar().AddTo(root);
+            var footer = new Toolbar().AddTo(root).WithClasses("footer");
             
             new SliderInt { value = ThumbnailSize, lowValue = 1, highValue = 4 }
                 .WithClasses("size-slider")
@@ -102,8 +192,8 @@ namespace LowEndGames.TextureBrowser
 
             new ToolbarButton(() => { SettingsService.OpenUserPreferences("Preferences/Texture Browser"); })
                 {
-                    iconImage = EditorGUIUtility.IconContent("Settings Icon").image as Texture2D,
-                    tooltip = "Settings"
+                    iconImage = EditorGUIUtility.IconContent("Settings").image as Texture2D,
+                    tooltip = "Open preferences"
                 }
                 .AddTo(footer);
             
@@ -116,18 +206,21 @@ namespace LowEndGames.TextureBrowser
         {
             EditorPrefs.SetInt(ThumbnailSizeKey, evt.newValue);
 
-            if (m_textureList != null)
+            foreach (var e in m_textures)
             {
-                foreach (var e in m_textureList.Children())
+                if (e.Element != null)
                 {
-                    e.style.width = ThumbnailSize * 64;
-                    e.style.height = ThumbnailSize * 64;
+                    e.Element.style.width = ThumbnailSize * 64;
+                    e.Element.style.height = ThumbnailSize * 64;
                 }
             }
         }
         
         private void RefreshTextures()
         {
+            m_favourites.Clear();
+            m_favourites.AddRange(EditorPrefs.GetString(FavouritesKey, "").Split(","));
+            
             var guids = AssetDatabase.FindAssets("t:texture2d", new[] { TextureDirectory });
 
             m_textures.Clear();
@@ -138,84 +231,143 @@ namespace LowEndGames.TextureBrowser
                 var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
                 if (tex)
                 {
-                    m_textures.Add(tex);
+                    var texInfo = new TextureInfo(tex);
+                    texInfo.Element = CreateElement(texInfo);
+                    texInfo.IsFavourite = m_favourites.Contains(tex.name);
+                    m_textures.Add(texInfo);
                 }
             }
         }
 
-        private void PopulateList()
+        private VisualElement CreateElement(TextureInfo texInfo)
         {
-            if (m_textureList == null)
+            var texElement = new VisualElement().WithClasses("tex-parent");
+            
+            texElement.name = texInfo.Texture.name; // texture name helps us ID this later
+            
+            if (texInfo.IsFavourite)
             {
-                return;
+                texElement.WithClasses("tex-favourite");
             }
             
-            m_textureList.Clear();
-
-            foreach (var tex in m_textures)
-            {
-                // filter 
-                
-                if (!string.IsNullOrEmpty(m_searchString) &&
-                    !tex.name.Contains(m_searchString, StringComparison.InvariantCultureIgnoreCase))
+            texElement.style.backgroundImage = texInfo.Texture;
+            texElement.style.width = ThumbnailSize * 64;
+            texElement.style.height = ThumbnailSize * 64;
+            
+            new Label { text = texInfo.Texture.name }.WithClasses("tex-label").AddTo(texElement);
+            
+            // button to ping material
+            
+            new Button(() =>
                 {
-                    continue;   
+                    var material = FindOrCreateMaterial(texInfo);
+                    EditorGUIUtility.PingObject(material);
+                
+                }){ iconImage = m_materialIcon, tooltip = "Locate Material In Project"}
+                .WithClasses("tex-mat-button")
+                .AddTo(texElement);
+            
+            // button to toggle favourite
+            
+            new Button(() =>
+                {
+                    ToggleFavourite(texInfo);
+
+                }){ iconImage = m_favouriteIcon, tooltip = "Favourite"}
+                .WithClasses("tex-fav-button")
+                .AddTo(texElement);
+            
+            // start drag on mouse down
+
+            texElement.RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.button == 0) // Left mouse button
+                {
+                    m_draggedTexture = texInfo;
+                    m_dragStartPosition = evt.localMousePosition;
+                }
+            });
+
+            texElement.RegisterCallback<MouseMoveEvent>(evt =>
+            {
+                // start drag after a small movement
+                
+                if (m_draggedTexture != null && Vector2.Distance(evt.localMousePosition, m_dragStartPosition) > 5)
+                {
+                    var material = FindOrCreateMaterial(m_draggedTexture);
+
+                    DragAndDrop.PrepareStartDrag();
+                    DragAndDrop.objectReferences = new Object[] { material };
+                    DragAndDrop.StartDrag(material.name);
+                    m_draggedTexture = null; // Reset dragged texture
+                }
+            });
+            
+            // reset dragged texture on mouse up
+
+            texElement.RegisterCallback<MouseUpEvent>(_ =>
+            {
+                m_draggedTexture = null; 
+            });
+
+            return texElement;
+        }
+
+        private void PopulateList()
+        {
+            m_textureListView.Clear();
+            
+            foreach (var texInfo in m_textures)
+            {
+                if (!string.IsNullOrEmpty(m_searchString) &&
+                    !texInfo.Texture.name.Contains(m_searchString, StringComparison.InvariantCultureIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (m_filter.HasFlag(FilterFlags.Favourites) && !texInfo.IsFavourite)
+                {
+                    continue;
+                }
+
+                if (m_filter.HasFlag(FilterFlags.Used))
+                {
+                    if (!IsTextureInUse(texInfo.Texture))
+                    {
+                        continue;
+                    }
                 }
                 
-                var texElement = new VisualElement().WithClasses("tex-parent");
-                texElement.style.backgroundImage = tex;
-                texElement.style.width = ThumbnailSize * 64;
-                texElement.style.height = ThumbnailSize * 64;
-                
-                var label = new Label { text = tex.name }.WithClasses("tex-label");
-                texElement.Add(label);
-                
-                // button to ping material
-                
-                new Button(() =>
-                    {
-                        var material = FindOrCreateMaterial(tex);
-                        EditorGUIUtility.PingObject(material);
-                    
-                    }){ iconImage = m_materialIcon, tooltip = "Locate Material In Project"}
-                    .WithClasses("tex-mat-button")
-                    .AddTo(texElement);
-                
-                // start drag on mouse down
-
-                texElement.RegisterCallback<MouseDownEvent>(evt =>
+                if (texInfo.IsFavourite)
                 {
-                    if (evt.button == 0) // Left mouse button
-                    {
-                        m_draggedTexture = tex;
-                        m_dragStartPosition = evt.localMousePosition;
-                    }
-                });
-
-                texElement.RegisterCallback<MouseMoveEvent>(evt =>
+                    if (!texInfo.Element.ClassListContains("tex-favourite"))
+                        texInfo.Element.AddToClassList("tex-favourite");
+                }
+                else
                 {
-                    // start drag after a small movement
-                    
-                    if (m_draggedTexture != null && Vector2.Distance(evt.localMousePosition, m_dragStartPosition) > 5)
-                    {
-                        var material = FindOrCreateMaterial(m_draggedTexture);
-
-                        DragAndDrop.PrepareStartDrag();
-                        DragAndDrop.objectReferences = new Object[] { material };
-                        DragAndDrop.StartDrag(material.name);
-                        m_draggedTexture = null; // Reset dragged texture
-                    }
-                });
+                    texInfo.Element.RemoveFromClassList("tex-favourite");
+                }
                 
-                // Reset dragged texture on mouse up
-
-                texElement.RegisterCallback<MouseUpEvent>(evt =>
-                {
-                    m_draggedTexture = null; 
-                });
-
-                m_textureList.Add(texElement);
+                m_textureListView.Add(texInfo.Element);
             }
+        }
+
+        private void ToggleFavourite(TextureInfo texInfo)
+        {
+            texInfo.IsFavourite = !texInfo.IsFavourite;
+            
+            if (texInfo.IsFavourite)
+            {
+                m_favourites.Add(texInfo.Texture.name);
+            }
+            else
+            {
+                m_favourites.Remove(texInfo.Texture.name);
+            }
+            
+            EditorPrefs.SetString(FavouritesKey, string.Join(",", m_favourites));
+            
+            PopulateList();
         }
 
         private void CacheMaterials()
@@ -236,30 +388,35 @@ namespace LowEndGames.TextureBrowser
             }
         }
 
-        private Material FindOrCreateMaterial(Texture2D texture2D)
+        private Material FindOrCreateMaterial(TextureInfo texInfo)
         {
-            var mainTexKeyword = EditorPrefs.GetString(ShaderMainTexKeywordKey, DefaultShaderMainTexKeyword);
-
-            foreach (var material in m_materials)
+            // if we already have a cached material use that
+            
+            if (texInfo.Material != null)
             {
-                if (material.HasProperty(mainTexKeyword) && material.GetTexture(mainTexKeyword) == texture2D)
-                {
-                    return material;
-                }
+                return texInfo.Material;
+            }
+
+            if (HasMaterial(texInfo.Texture, out var material))
+            {
+                texInfo.Material = material;
+                return material;
             }
 
             var shader = Shader.Find(DefaultShader);
 
             var newMaterial = new Material(shader);
+            
+            var mainTexKeyword = EditorPrefs.GetString(ShaderMainTexKeywordKey, DefaultShaderMainTexKeyword);
 
-            newMaterial.SetTexture(mainTexKeyword, texture2D);
+            newMaterial.SetTexture(mainTexKeyword, texInfo.Texture);
             
             var materialsRoot = MaterialDirectory;
 
             if (!AssetDatabase.IsValidFolder(materialsRoot + "/AutoGenerated"))
                 AssetDatabase.CreateFolder(materialsRoot, "AutoGenerated");
 
-            var materialName = "mat." + texture2D.name.ToLower().Replace(" ", "_") + ".mat";
+            var materialName = "mat." + texInfo.Texture.name.ToLower().Replace(" ", "_") + ".mat";
 
             var relativePath = Path.Combine(materialsRoot + "/AutoGenerated", materialName);
             AssetDatabase.CreateAsset(newMaterial, relativePath);
@@ -269,88 +426,126 @@ namespace LowEndGames.TextureBrowser
             
             m_materials.Add(newMaterial);
 
+            texInfo.Material = newMaterial;
+
             return newMaterial;
+        }
+
+        private bool HasMaterial(Texture2D texture, out Material material)
+        {
+            var mainTexKeyword = EditorPrefs.GetString(ShaderMainTexKeywordKey, DefaultShaderMainTexKeyword);
+
+            foreach (var m in m_materials)
+            {
+                if (m.HasProperty(mainTexKeyword) && m.GetTexture(mainTexKeyword) == texture)
+                {
+                    material = m;
+                    return true;
+                }
+            }
+
+            material = null;
+            return false;
+        }
+        
+        private bool IsTextureInUse(Texture2D tex)
+        {
+            if (HasMaterial(tex, out var material))
+            {
+                var renderers = FindObjectsByType<Renderer>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+
+                foreach (var r in renderers)
+                {
+                    if (r.sharedMaterials.Contains(material))
+                        return true;
+                }
+            }
+
+            return false;
         }
 
         [SettingsProvider]
         private static SettingsProvider CreateSettingsProvider()
         {
-            var textureDirectory = EditorPrefs.GetString(TextureDirectoryKey, DefaultTextureDirectory);
-            var materialDirectory = EditorPrefs.GetString(MaterialDirectoryKey, DefaultMaterialDirectory);
-            var defaultShaderName = EditorPrefs.GetString(DefaultShaderKey, DefaultShaderName);
-            var shaderKeyword = EditorPrefs.GetString(ShaderMainTexKeywordKey, DefaultShaderMainTexKeyword);
-            var defaultShaderObject = Shader.Find(defaultShaderName);
-
             var provider = new SettingsProvider("Preferences/Texture Browser", SettingsScope.User)
             {
                 label = "Texture Browser",
-                guiHandler = _ =>
+                activateHandler = (_, rootElement) =>
                 {
-                    EditorGUILayout.BeginVertical();
-
-                    EditorGUI.BeginChangeCheck();
-                    textureDirectory = EditorGUILayout.TextField("Texture Directory", textureDirectory);
-
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        if (Directory.Exists(textureDirectory))
-                        {
-                            EditorPrefs.SetString(TextureDirectoryKey, textureDirectory);
-                        }
-                        else
-                        {
-                            EditorGUILayout.HelpBox("Please select a valid folder.", MessageType.Error);
-                        }
-                    }
-
-                    EditorGUI.BeginChangeCheck();
-                    materialDirectory = EditorGUILayout.TextField("Material Directory", materialDirectory);
-
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        if (Directory.Exists(materialDirectory))
-                        {
-                            EditorPrefs.SetString(MaterialDirectoryKey, materialDirectory);
-                        }
-                        else
-                        {
-                            EditorGUILayout.HelpBox("Please select a valid folder.", MessageType.Error);
-                        }
-                    }
+                    rootElement.styleSheets.Add(_styleSheet);
+                    rootElement.WithClasses("settings-container");
                     
-                    EditorGUI.BeginChangeCheck();
-                    defaultShaderObject = EditorGUILayout.ObjectField("Default Shader", defaultShaderObject, typeof(Shader), false) as Shader;
-                    
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        if (defaultShaderObject != null)
+                    var textureDirectory = EditorPrefs.GetString(TextureDirectoryKey, DefaultTextureDirectory);
+                    var materialDirectory = EditorPrefs.GetString(MaterialDirectoryKey, DefaultMaterialDirectory);
+                    var defaultShaderName = EditorPrefs.GetString(DefaultShaderKey, DefaultShaderName);
+                    var shaderKeyword = EditorPrefs.GetString(ShaderMainTexKeywordKey, DefaultShaderMainTexKeyword);
+                    var defaultShaderObject = Shader.Find(defaultShaderName);
+
+                    rootElement.Add(new Label("Texture Browser").WithClasses("settings-title"));
+
+                    new TextField("Texture Directory")
                         {
-                            var shaderName = defaultShaderObject.name;
-                            if (shaderName != EditorPrefs.GetString(DefaultShaderKey, DefaultShaderName))
+                            value = textureDirectory
+                        }
+                        .AddTo(rootElement)
+                        .RegisterValueChangedCallback(evt =>
+                        {
+                            if (Directory.Exists(evt.newValue))
                             {
-                                EditorPrefs.SetString(DefaultShaderKey, shaderName);
+                                EditorPrefs.SetString(TextureDirectoryKey, evt.newValue);
                             }
-                        }
-                        else
-                        {
-                            EditorPrefs.SetString(DefaultShaderKey, DefaultShaderName);
-                            defaultShaderObject = Shader.Find(DefaultShaderName);
-                        }
-                    }
+                        });
                     
-                    EditorGUI.BeginChangeCheck();
-                    shaderKeyword = EditorGUILayout.TextField("Main Texture Shader Keyword", shaderKeyword);
+                    new TextField("Material Directory")
+                        {
+                            value = materialDirectory
+                        }
+                        .AddTo(rootElement)
+                        .RegisterValueChangedCallback(evt =>
+                        {
+                            if (Directory.Exists(evt.newValue))
+                            {
+                                EditorPrefs.SetString(MaterialDirectoryKey, evt.newValue);
+                            }
+                        });
 
-                    if (EditorGUI.EndChangeCheck())
-                    {
-                        EditorPrefs.SetString(DefaultShaderKey, shaderKeyword);
-                    }
+                    new ObjectField("Default Shader")
+                        {
+                            value = defaultShaderObject, objectType = typeof(Shader)
+                        }
+                        .AddTo(rootElement)
+                        .RegisterValueChangedCallback(evt =>
+                        {
+                            if (evt.newValue != null)
+                            {
+                                var shaderName = (evt.newValue as Shader)?.name;
+                                if (shaderName != EditorPrefs.GetString(DefaultShaderKey, DefaultShaderName))
+                                {
+                                    EditorPrefs.SetString(DefaultShaderKey, shaderName);
+                                }
+                            }
+                            else
+                            {
+                                EditorPrefs.SetString(DefaultShaderKey, DefaultShaderName);
+                            }
+                        });
 
-
-                    EditorGUILayout.EndVertical();
+                    new TextField("Main Texture Shader Keyword")
+                        {
+                            value = shaderKeyword
+                        }
+                        .AddTo(rootElement)
+                        .RegisterValueChangedCallback(evt =>
+                        {
+                            EditorPrefs.SetString(ShaderMainTexKeywordKey, evt.newValue);
+                        });
+                    
+                    new Label().AddTo(rootElement);
                 },
+
                 keywords = new HashSet<string>(new[] { "texture", "browser", "editor", "tool" })
             };
+            
             return provider;
         }
     }

@@ -20,12 +20,12 @@
     border-width: 1px;
 }
 
-.tex-parent:hover{
+.tex-parent:hover {
     border-color: white;
     border-width: 1px;
 }
 
-.tex-mat-button{
+.tex-mat-button {
     width: 30px;
     height: 30px;
     position: absolute;
@@ -34,8 +34,26 @@
     display: none;
 }
 
-.tex-parent:hover .tex-mat-button{
+.tex-parent:hover .tex-mat-button {
     display: initial;
+}
+
+.tex-fav-button {
+    width: 30px;
+    height: 30px;
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    display: none;
+}
+
+.tex-parent:hover .tex-fav-button{
+    display: initial;
+}
+
+.tex-favourite .tex-fav-button {
+    background-color: #BF8600;
+    color: black;
 }
 
 .tex-label {
@@ -55,4 +73,22 @@
 .search-field{
     flex-grow: 1;
     min-width: 300px;
+}
+
+.settings-container {
+    padding: 10px;
+}
+
+.settings-container .unity-base-field {
+    margin-bottom: 5px !important;
+}
+
+.settings-container .unity-base-field__label {
+    min-width: 200px !important;
+}
+
+.settings-title {
+    font-size: 19px;
+    -unity-font-style: bold;
+    margin-bottom: 10px;
 }
