@@ -1,0 +1,13 @@
+{
+  "name": "com.low-end-games.texturebrowser",
+  "version": "1.0.0",
+  "displayName": "Texture Browser",
+  "description": "For browsing and using textures in Unity.",
+  "author": {
+    "name": "Low End Games",
+    "email": "blll.lowe87@gmail.com",
+    "url": "https://github.com/billowper/leg.texturebrowser"
+  },
+  "type": "library",
+  "hideInEditor": false
+}
