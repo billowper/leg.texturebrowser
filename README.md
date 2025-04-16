@@ -1,5 +1,5 @@
 # Texture Browser
-![Unity_2025-04-15_15-51-41](https://github.com/user-attachments/assets/fa474f53-9acd-42cd-a7c1-9e2039ba4623)
+![Unity_2025-04-16_01-08-30](https://github.com/user-attachments/assets/2d06bd9f-c9e3-4f70-8e26-20ebd1bee6a6)
 
 Editor window that shows textures, similar to old school map editors like Valve's Hammer Editor.
 
