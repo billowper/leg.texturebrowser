@@ -22,5 +22,6 @@ Textures pictured in the screenshot are from the wonderful [Torment pack by Stri
 - configure folders used for texture and material scanning
 - select a default shader & main texture keyword for generating materials
 
-![Unity_2025-04-16_14-40-26](https://github.com/user-attachments/assets/51f44b68-e289-4326-a003-d4c1269d0bd7)
+![image](https://github.com/user-attachments/assets/af95312e-11fa-4f22-9586-b9ad8433cd77)
+
 
