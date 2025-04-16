@@ -5,7 +5,9 @@ Editor window that shows textures, similar to old school map editors like Valve'
 
 - drag & drop into scene view
 - auto-magic Material generation if none-exists already
-- search and display size \o/
+- search, favourites and filter by scene-usage
+- adjustable preview size
+- preferences UI for default folders + shader to use when generating new materials
 - works with RealtimeCSG, which is the main reason I made this
 - more soon stuff maybe?
 
