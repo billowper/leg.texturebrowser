@@ -139,7 +139,6 @@ namespace LowEndGames.TextureBrowser
 
                 PopulateList();
             });
-            
 
             var usedToggle = new ToolbarToggle()
                 {
@@ -171,7 +170,7 @@ namespace LowEndGames.TextureBrowser
                 })
                 {
                     iconImage = EditorGUIUtility.IconContent("Refresh").image as Texture2D,
-                    tooltip = "Refresh the window contents"
+                    tooltip = "Refresh content"
                 }
                 .AddTo(toolbar);
             
@@ -286,6 +285,18 @@ namespace LowEndGames.TextureBrowser
                     m_draggedTexture = texInfo;
                     m_dragStartPosition = evt.localMousePosition;
                 }
+            });
+            
+            // rmb context
+
+            texElement.RegisterCallback<ContextClickEvent>(evt =>
+            {
+                var menu = new GenericMenu();
+                menu.AddItem(new GUIContent("Find in Project"), false, () =>
+                {
+                    EditorGUIUtility.PingObject(texInfo.Texture);
+                });
+                menu.ShowAsContext();
             });
 
             texElement.RegisterCallback<MouseMoveEvent>(evt =>
