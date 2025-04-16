@@ -1,17 +1,20 @@
 # Texture Browser
-![Unity_2025-04-16_01-08-30](https://github.com/user-attachments/assets/2d06bd9f-c9e3-4f70-8e26-20ebd1bee6a6)
+![TBROWSERLOGO](https://github.com/user-attachments/assets/02333374-adc3-4d2c-b80a-a8480e2a2881)
 
-Editor window that shows textures, similar to old school map editors like Valve's Hammer Editor.
+Editor window that displays a grid of textures, similar to old school map editors like Valve's Hammer Editor.
 
+## Features
 - drag & drop into scene view
 - auto-magic Material generation if none-exists already
-- search, favourites and filter by scene-usage
+- search, favourites and filter by open scene usage
 - adjustable preview size
 - preferences UI for default folders + shader to use when generating new materials
 - works with RealtimeCSG, which is the main reason I made this
 - more soon stuff maybe?
 
 Textures pictured in the screenshot are from the wonderful [Torment pack by Strideh](https://strideh.itch.io/torment) 
+
+![Unity_2025-04-16_01-08-30](https://github.com/user-attachments/assets/2d06bd9f-c9e3-4f70-8e26-20ebd1bee6a6)
 
 ## Installation & Usage
 - download package and unzip to `/Packages` folder, or just copy paste the contents of `/Editor` into your project.
