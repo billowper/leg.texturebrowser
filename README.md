@@ -12,3 +12,15 @@ Editor window that shows textures, similar to old school map editors like Valve'
 - more soon stuff maybe?
 
 Textures pictured in the screenshot are from the wonderful [Torment pack by Strideh](https://strideh.itch.io/torment) 
+
+## Installation & Usage
+- download package and unzip to `/Packages` folder, or just copy paste the contents of `/Editor` into your project.
+- open via menu `Low End Games/Texture Browser`
+- I'll add proper package installation soon!?
+
+## Preferences
+- configure folders used for texture and material scanning
+- select a default shader & main texture keyword for generating materials
+
+![Unity_2025-04-16_14-40-26](https://github.com/user-attachments/assets/51f44b68-e289-4326-a003-d4c1269d0bd7)
+
