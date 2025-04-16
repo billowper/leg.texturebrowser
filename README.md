@@ -11,3 +11,4 @@ Editor window that shows textures, similar to old school map editors like Valve'
 - works with RealtimeCSG, which is the main reason I made this
 - more soon stuff maybe?
 
+Textures pictured in the screenshot are from the wonderful [Torment pack by Strideh](https://strideh.itch.io/torment) 
