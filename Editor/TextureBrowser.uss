@@ -1,3 +1,7 @@
+.texture-list-container {
+    flex-grow: 1;
+}
+
 .texture-list {
     align-content: flex-start;
     align-items: flex-start;
