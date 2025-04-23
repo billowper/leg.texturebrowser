@@ -1,3 +1,7 @@
+.toolbar {
+    height: 30px;
+}
+
 .texture-list-container {
     flex-grow: 1;
 }
@@ -79,6 +83,47 @@
     min-width: 300px;
 }
 
+/* saved search */
+
+.save-search-button:hover {
+    background-color: green;
+    color: lightgreen;
+}
+
+.saved-search-list {
+    flex-direction: row;
+    flex-shrink: 1;
+    padding: 4px;
+}
+
+.saved-search-button{
+    height: 24px;
+    flex-direction: row;
+    padding-left: 10px;
+    padding-right: 0;
+    margin: 0 1px;
+}
+.saved-search-button:hover {
+    background-color: darkgoldenrod;
+    color: palegoldenrod;
+}
+
+.saved-search-button > #label {
+    margin-right: 5px;
+}
+
+.saved-search-button > #delete {
+    color: grey;
+    width: 18px;
+    -unity-font-style: bold;
+}
+.saved-search-button > #delete:hover {
+    background-color: darkred;
+    color: white;
+}
+
+/* settings */
+
 .settings-container {
     padding: 10px;
 }
@@ -96,3 +141,4 @@
     -unity-font-style: bold;
     margin-bottom: 10px;
 }
+

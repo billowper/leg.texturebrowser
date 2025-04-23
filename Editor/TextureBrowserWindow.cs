@@ -14,23 +14,19 @@ namespace LowEndGames.TextureBrowser
     {
         [SerializeField] private StyleSheet m_styleSheet;
 
-        private const string TextureDirectoryKey = "TextureBrowser_TextureDirectory";
-        private const string MaterialDirectoryKey = "TextureBrowser_MaterialDirectory";
-        private const string ThumbnailSizeKey = "TextureBrowser_ThumbnailSize";
-        private const string DefaultShaderKey = "TextureBrowser_DefaultShader";
-        private const string ShaderMainTexKeywordKey = "TextureBrowser_DefaultShaderMainTexKeyword";
-        private const string FavouritesKey = "TextureBrowser_Favourites";
+        [MenuItem("Low End Games/Texture Browser")]
+        private static void Open()
+        {
+            var window = GetWindow<TextureBrowserWindow>();
+            var title = EditorGUIUtility.IconContent("Texture Icon", "Texture Browser");
+            title.text = "Texture Browser";
+            window.titleContent = title;
+            window.Show();
+        }
 
-        private const string DefaultTextureDirectory = "Assets/Textures";
-        private const string DefaultMaterialDirectory = "Assets/Materials";
-        private const int DefaultThumbnailSize = 4;
-        private const string DefaultShaderName = "Standard";
-        private const string DefaultShaderMainTexKeyword = "_BaseMap";
+        private static StyleSheet _styleSheet; // static copy for settings provider
 
-        private static string TextureDirectory => EditorPrefs.GetString(TextureDirectoryKey, DefaultTextureDirectory);
-        private static string MaterialDirectory => EditorPrefs.GetString(MaterialDirectoryKey, DefaultMaterialDirectory);
-        private static string DefaultShader => EditorPrefs.GetString(DefaultShaderKey, DefaultShaderName);
-        private static int ThumbnailSize => EditorPrefs.GetInt(ThumbnailSizeKey, DefaultThumbnailSize);
+        // window state
 
         private Vector2 m_scroll;
         private TextureInfo m_draggedTexture;
@@ -39,12 +35,17 @@ namespace LowEndGames.TextureBrowser
         private Texture2D m_materialIcon;
         private Texture2D m_favouriteIcon;
         private Texture2D m_usedIcon;
-        
         private VisualElement m_textureListView;
+        private VisualElement m_quickSearchView;
+        private FilterFlags m_filter = FilterFlags.None;
+
+        // data
 
         private readonly List<TextureInfo> m_textures = new();
         private readonly List<Material> m_materials = new();
         private readonly List<string> m_favourites = new();
+        private readonly List<string> m_savedSearches = new();
+        private ToolbarSearchField m_searchField;
 
         [Flags]
         private enum FilterFlags
@@ -54,10 +55,6 @@ namespace LowEndGames.TextureBrowser
             Used = 1 << 2,
         }
         
-        private FilterFlags m_filter = FilterFlags.None;
-
-        private static StyleSheet _styleSheet; // for settings provider
-
         private class TextureInfo
         {
             public Texture2D Texture { get; }
@@ -71,16 +68,6 @@ namespace LowEndGames.TextureBrowser
             }
         }
 
-        [MenuItem("Low End Games/Texture Browser")]
-        private static void Open()
-        {
-            var window = GetWindow<TextureBrowserWindow>();
-            var title = EditorGUIUtility.IconContent("Texture Icon", "Texture Browser");
-            title.text = "Texture Browser";
-            window.titleContent = title;
-            window.Show();
-        }
-        
         private void OnEnable()
         {
             _styleSheet = m_styleSheet; // for settings provider, hacky but whatever
@@ -88,9 +75,6 @@ namespace LowEndGames.TextureBrowser
             m_materialIcon = EditorGUIUtility.IconContent("Material Icon").image as Texture2D;
             m_favouriteIcon = EditorGUIUtility.IconContent("Favorite").image as Texture2D;
             m_usedIcon = EditorGUIUtility.IconContent("d_TerrainInspector.TerrainToolSplat On").image as Texture2D;
-
-            m_favourites.Clear();
-            m_favourites.AddRange(EditorPrefs.GetString(FavouritesKey, "").Split(","));
         }
 
         private void OnDisable()
@@ -108,15 +92,28 @@ namespace LowEndGames.TextureBrowser
             
             // toolbar
 
-            var toolbar = new Toolbar().AddTo(root);
-            new ToolbarSearchField { value = m_searchString }
+            var toolbar = new Toolbar().AddTo(root).WithClasses("toolbar");
+            
+            m_searchField = new ToolbarSearchField { value = m_searchString }
                 .WithClasses("search-field")
-                .AddTo(toolbar)
-                .RegisterValueChangedCallback(e =>
-                {
-                    m_searchString = e.newValue;
-                    PopulateList();
-                });
+                .AddTo(toolbar);
+            
+            var saveSearchButton = new ToolbarButton(SaveCurrentSearchTerm)
+            {
+                tooltip = "Save Search",
+                iconImage = EditorGUIUtility.IconContent("Toolbar Plus").image as Texture2D
+            }.WithClasses("save-search-button").AddTo(toolbar);
+            
+            saveSearchButton.SetEnabled(false);
+            
+            m_searchField.RegisterValueChangedCallback(e =>
+            {
+                m_searchString = e.newValue;
+                saveSearchButton.SetEnabled(!string.IsNullOrEmpty(e.newValue));
+                PopulateList();
+            });
+            
+            new ToolbarSpacer().AddTo(toolbar);
 
             var faveToggle = new ToolbarToggle()
                 {
@@ -174,6 +171,10 @@ namespace LowEndGames.TextureBrowser
                 }
                 .AddTo(toolbar);
             
+            // saved search list
+            
+            m_quickSearchView = new VisualElement().WithClasses("saved-search-list").AddTo(root);
+            
             // texture grid
 
             m_textureListView = new ScrollView(ScrollViewMode.Vertical).AddTo(root);
@@ -196,6 +197,7 @@ namespace LowEndGames.TextureBrowser
                 }
                 .AddTo(footer);
             
+            LoadQuickSearch();
             RefreshTextures();
             CacheMaterials();
             PopulateList();
@@ -215,10 +217,76 @@ namespace LowEndGames.TextureBrowser
             }
         }
         
-        private void RefreshTextures()
+        private void LoadFavourites()
         {
             m_favourites.Clear();
             m_favourites.AddRange(EditorPrefs.GetString(FavouritesKey, "").Split(","));
+        }
+        
+        private void LoadQuickSearch()
+        {
+            m_savedSearches.Clear();
+            m_savedSearches.AddRange(EditorPrefs.GetString(SavedSearchesKey, "").Split("|"));
+
+            RefreshQuickSearchContent();
+        }
+
+        private void RefreshQuickSearchContent()
+        {
+            m_quickSearchView.Clear();
+
+            foreach (var search in m_savedSearches)
+            {
+                var button = new Button().WithClasses("saved-search-button");
+                button.RegisterCallback<ClickEvent>(evt =>
+                {
+                    LoadSearchTerm(search, evt.modifiers == EventModifiers.Shift);
+
+                });
+                button.Add(new Label { name = "label", text = search });
+                button.Add(new Button(() => DeleteSearchTerm(search)) { name = "delete", tooltip = "Remove", text = "X"});
+                m_quickSearchView.Add(button);
+            }
+        }
+
+        private void SaveCurrentSearchTerm()
+        {
+            if (string.IsNullOrEmpty(m_searchString))
+            {
+                return;
+            }
+            
+            m_savedSearches.Add(m_searchString);
+                
+            EditorPrefs.SetString(SavedSearchesKey, string.Join("|", m_savedSearches));
+            
+            RefreshQuickSearchContent();
+        }
+
+        private void LoadSearchTerm(string searchTerm, bool additive)
+        {
+            if (additive)
+            {
+                m_searchField.value += $", {searchTerm}";
+            }
+            else
+            {
+                m_searchField.value = searchTerm;
+            }
+        }
+        
+        private void DeleteSearchTerm(string searchTerm)
+        {
+            m_savedSearches.Remove(searchTerm);
+            
+            EditorPrefs.SetString(SavedSearchesKey, string.Join("|", m_savedSearches));
+            
+            RefreshQuickSearchContent();
+        }
+        
+        private void RefreshTextures()
+        {
+            LoadFavourites();
             
             var guids = AssetDatabase.FindAssets("t:texture2d", new[] { TextureDirectory });
 
@@ -326,12 +394,15 @@ namespace LowEndGames.TextureBrowser
 
         private void PopulateList()
         {
-            m_textureListView.Clear();
+            var searchTerms = m_searchString.Replace(", ", ",").Split(",");
             
+            m_textureListView.Clear();
+
             foreach (var texInfo in m_textures)
             {
-                if (!string.IsNullOrEmpty(m_searchString) &&
-                    !texInfo.Texture.name.Contains(m_searchString, StringComparison.InvariantCultureIgnoreCase))
+                var matchedSearchTerm = searchTerms.Any(term => texInfo.Texture.name.Contains(term, StringComparison.InvariantCultureIgnoreCase));
+
+                if (!matchedSearchTerm)
                 {
                     continue;
                 }
@@ -352,7 +423,9 @@ namespace LowEndGames.TextureBrowser
                 if (texInfo.IsFavourite)
                 {
                     if (!texInfo.Element.ClassListContains("tex-favourite"))
+                    {
                         texInfo.Element.AddToClassList("tex-favourite");
+                    }
                 }
                 else
                 {
@@ -415,9 +488,7 @@ namespace LowEndGames.TextureBrowser
             }
 
             var shader = Shader.Find(DefaultShader);
-
             var newMaterial = new Material(shader);
-            
             var mainTexKeyword = EditorPrefs.GetString(ShaderMainTexKeywordKey, DefaultShaderMainTexKeyword);
 
             newMaterial.SetTexture(mainTexKeyword, texInfo.Texture);
@@ -425,7 +496,9 @@ namespace LowEndGames.TextureBrowser
             var materialsRoot = MaterialDirectory;
 
             if (!AssetDatabase.IsValidFolder(materialsRoot + "/AutoGenerated"))
+            {
                 AssetDatabase.CreateFolder(materialsRoot, "AutoGenerated");
+            }
 
             var materialName = "mat." + texInfo.Texture.name.ToLower().Replace(" ", "_") + ".mat";
 
@@ -468,13 +541,44 @@ namespace LowEndGames.TextureBrowser
                 foreach (var r in renderers)
                 {
                     if (r.sharedMaterials.Contains(material))
+                    {
                         return true;
+                    }
                 }
             }
 
             return false;
         }
+        
+        #region SETTINGS
 
+        private static string GetPrefsKey(string key)
+        {
+            return $"{Application.productName}.{key}";
+        }
+
+        private static string FavouritesKey => GetPrefsKey("TextureBrowser_Favourites");
+        private static string SavedSearchesKey => GetPrefsKey("TextureBrowser_SavedSearches");
+
+        private const string DefaultShaderMainTexKeyword = "_BaseMap";
+        private static string ShaderMainTexKeywordKey => GetPrefsKey("TextureBrowser_DefaultShaderMainTexKeyword");
+
+        private static string TextureDirectory => EditorPrefs.GetString(TextureDirectoryKey, DefaultTextureDirectory);
+        private static string TextureDirectoryKey => GetPrefsKey("TextureBrowser_TextureDirectory");
+        private const string DefaultTextureDirectory = "Assets/Textures";
+
+        private static string MaterialDirectory => EditorPrefs.GetString(MaterialDirectoryKey, DefaultMaterialDirectory);
+        private static string MaterialDirectoryKey => GetPrefsKey("TextureBrowser_MaterialDirectory");
+        private const string DefaultMaterialDirectory = "Assets/Materials";
+
+        private static string DefaultShader => EditorPrefs.GetString(DefaultShaderKey, DefaultShaderName);
+        private static string DefaultShaderKey => GetPrefsKey("TextureBrowser_DefaultShader");
+        private const string DefaultShaderName = "Standard";
+
+        private static int ThumbnailSize => EditorPrefs.GetInt(ThumbnailSizeKey, DefaultThumbnailSize);
+        private static string ThumbnailSizeKey => GetPrefsKey("TextureBrowser_ThumbnailSize");
+        private const int DefaultThumbnailSize = 4;
+        
         [SettingsProvider]
         private static SettingsProvider CreateSettingsProvider()
         {
@@ -559,6 +663,8 @@ namespace LowEndGames.TextureBrowser
             
             return provider;
         }
+        
+        #endregion
     }
 }
 
