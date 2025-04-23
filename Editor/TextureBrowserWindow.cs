@@ -41,11 +41,12 @@ namespace LowEndGames.TextureBrowser
 
         // data
 
-        private readonly List<TextureInfo> m_textures = new();
-        private readonly List<Material> m_materials = new();
+        private readonly List<TextureInfo> m_data = new();
+        private readonly List<Material> m_materialCache = new();
         private readonly List<string> m_favourites = new();
         private readonly List<string> m_savedSearches = new();
         private ToolbarSearchField m_searchField;
+        private Label m_infoLabel;
 
         [Flags]
         private enum FilterFlags
@@ -57,13 +58,17 @@ namespace LowEndGames.TextureBrowser
         
         private class TextureInfo
         {
+            public string Name { get; }
             public Texture2D Texture { get; }
             public Material Material { get; set; }
             public bool IsFavourite { get; set; }
             public VisualElement Element { get; set; }
 
-            public TextureInfo(Texture2D tex)
+            public TextureInfo(string name, Texture2D tex)
             {
+                if (name.StartsWith("mat."))
+                    name = name.Remove(0, "mat.".Length);
+                Name = name;
                 Texture = tex;
             }
         }
@@ -159,12 +164,7 @@ namespace LowEndGames.TextureBrowser
                 PopulateList();
             });
             
-            new ToolbarButton(() =>
-                {
-                    RefreshTextures();
-                    CacheMaterials();
-                    PopulateList();
-                })
+            new ToolbarButton(FullRefresh)
                 {
                     iconImage = EditorGUIUtility.IconContent("Refresh").image as Texture2D,
                     tooltip = "Refresh content"
@@ -185,10 +185,24 @@ namespace LowEndGames.TextureBrowser
 
             var footer = new Toolbar().AddTo(root).WithClasses("footer");
             
+            m_infoLabel = new Label().AddTo(footer).WithClasses("info-label");
+            
             new SliderInt { value = ThumbnailSize, lowValue = 1, highValue = 4 }
                 .WithClasses("size-slider")
                 .AddTo(footer)
-                .RegisterValueChangedCallback(OnSizeChange);
+                .RegisterValueChangedCallback((evt) =>
+                {
+                    EditorPrefs.SetInt(ThumbnailSizeKey, evt.newValue);
+
+                    foreach (var e in m_data)
+                    {
+                        if (e.Element != null)
+                        {
+                            e.Element.style.width = ThumbnailSize * 64;
+                            e.Element.style.height = ThumbnailSize * 64;
+                        }
+                    }
+                });
 
             new ToolbarButton(() => { SettingsService.OpenUserPreferences("Preferences/Texture Browser"); })
                 {
@@ -196,33 +210,21 @@ namespace LowEndGames.TextureBrowser
                     tooltip = "Open preferences"
                 }
                 .AddTo(footer);
-            
+
+            FullRefresh();
+        }
+
+        private void FullRefresh()
+        {
             LoadQuickSearch();
-            RefreshTextures();
-            CacheMaterials();
+            LoadFavourites();
+            LoadContent();
+            
             PopulateList();
         }
 
-        private void OnSizeChange(ChangeEvent<int> evt)
-        {
-            EditorPrefs.SetInt(ThumbnailSizeKey, evt.newValue);
+        #region QUICKSEARCH
 
-            foreach (var e in m_textures)
-            {
-                if (e.Element != null)
-                {
-                    e.Element.style.width = ThumbnailSize * 64;
-                    e.Element.style.height = ThumbnailSize * 64;
-                }
-            }
-        }
-        
-        private void LoadFavourites()
-        {
-            m_favourites.Clear();
-            m_favourites.AddRange(EditorPrefs.GetString(FavouritesKey, "").Split(","));
-        }
-        
         private void LoadQuickSearch()
         {
             m_savedSearches.Clear();
@@ -284,28 +286,8 @@ namespace LowEndGames.TextureBrowser
             RefreshQuickSearchContent();
         }
         
-        private void RefreshTextures()
-        {
-            LoadFavourites();
-            
-            var guids = AssetDatabase.FindAssets("t:texture2d", new[] { TextureDirectory });
-
-            m_textures.Clear();
-            
-            foreach (var guid in guids)
-            {
-                var path = AssetDatabase.GUIDToAssetPath(guid);
-                var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
-                if (tex)
-                {
-                    var texInfo = new TextureInfo(tex);
-                    texInfo.Element = CreateElement(texInfo);
-                    texInfo.IsFavourite = m_favourites.Contains(tex.name);
-                    m_textures.Add(texInfo);
-                }
-            }
-        }
-
+        #endregion
+        
         private VisualElement CreateElement(TextureInfo texInfo)
         {
             var texElement = new VisualElement().WithClasses("tex-parent");
@@ -321,7 +303,7 @@ namespace LowEndGames.TextureBrowser
             texElement.style.width = ThumbnailSize * 64;
             texElement.style.height = ThumbnailSize * 64;
             
-            new Label { text = texInfo.Texture.name }.WithClasses("tex-label").AddTo(texElement);
+            new Label { text = texInfo.Name }.WithClasses("tex-label").AddTo(texElement);
             
             // button to ping material
             
@@ -357,7 +339,7 @@ namespace LowEndGames.TextureBrowser
             
             // rmb context
 
-            texElement.RegisterCallback<ContextClickEvent>(evt =>
+            texElement.RegisterCallback<ContextClickEvent>(_ =>
             {
                 var menu = new GenericMenu();
                 menu.AddItem(new GUIContent("Find in Project"), false, () =>
@@ -398,7 +380,7 @@ namespace LowEndGames.TextureBrowser
             
             m_textureListView.Clear();
 
-            foreach (var texInfo in m_textures)
+            foreach (var texInfo in m_data)
             {
                 var matchedSearchTerm = searchTerms.Any(term => texInfo.Texture.name.Contains(term, StringComparison.InvariantCultureIgnoreCase));
 
@@ -414,7 +396,7 @@ namespace LowEndGames.TextureBrowser
 
                 if (m_filter.HasFlag(FilterFlags.Used))
                 {
-                    if (!IsTextureInUse(texInfo.Texture))
+                    if (!IsTextureInUse(texInfo))
                     {
                         continue;
                     }
@@ -434,6 +416,14 @@ namespace LowEndGames.TextureBrowser
                 
                 m_textureListView.Add(texInfo.Element);
             }
+
+            m_infoLabel.text = $"Showing {m_textureListView.childCount} of {m_data.Count}";
+        }
+        
+        private void LoadFavourites()
+        {
+            m_favourites.Clear();
+            m_favourites.AddRange(EditorPrefs.GetString(FavouritesKey, "").Split(","));
         }
 
         private void ToggleFavourite(TextureInfo texInfo)
@@ -453,22 +443,95 @@ namespace LowEndGames.TextureBrowser
             
             PopulateList();
         }
-
-        private void CacheMaterials()
-        {
-            m_materials.Clear();
+        
+        private void LoadContent()
+        {         
+            m_data.Clear();
             
-            var guids = AssetDatabase.FindAssets("t:material", new[] { MaterialDirectory });
+            m_materialCache.Clear();
+            
+            var materialGuids = AssetDatabase.FindAssets("t:material", new[] { MaterialDirectory });
 
-            foreach (var guid in guids)
+            foreach (var guid in materialGuids)
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 var material = AssetDatabase.LoadAssetAtPath<Material>(path);
-
                 if (material)
                 {
-                    m_materials.Add(material);
+                    if (m_materialCache.Contains(material))
+                    {
+                        continue;
+                    }
+                    
+                    Texture2D tex = null; 
+                    
+                    if (material.mainTexture is Texture2D tex2d)
+                    {
+                        tex = tex2d;
+                    }
+                    else
+                    {
+                        var textProps = material.GetTexturePropertyNames();
+                        
+                        if (textProps.Length > 0 && material.GetTexture(textProps[0]) is Texture2D tex2D)
+                            tex = tex2D;
+                    }
+
+                    if (tex != null)
+                    {
+                        var texInfo = new TextureInfo(material.name, tex);
+                        texInfo.Element = CreateElement(texInfo);
+                        texInfo.IsFavourite = m_favourites.Contains(tex.name);
+                        texInfo.Material = material;
+                        m_data.Add(texInfo);
+                    }
+
+                    m_materialCache.Add(material);
                 }
+            }
+            
+            var textureGuids = AssetDatabase.FindAssets("t:texture2d", new[] { TextureDirectory });
+
+            foreach (var guid in textureGuids)
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var tex = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+                if (tex)
+                {
+                    if (m_data.Any(d => d.Texture == tex))
+                    {
+                        // dont allow duplicates for now...
+                        continue;
+                    }
+                    
+                    var texInfo = new TextureInfo(tex.name, tex);
+                    texInfo.Element = CreateElement(texInfo);
+                    texInfo.IsFavourite = m_favourites.Contains(tex.name);
+                    texInfo.Material = GetMaterial(tex);
+                    m_data.Add(texInfo);
+                }
+            }
+
+            return;
+
+            Material GetMaterial(Texture2D texture2D)
+            {
+                foreach (var material in m_materialCache)
+                {
+                    if (material.mainTexture == texture2D)
+                    {
+                        return material;
+                    }
+
+                    var textProps = material.GetTexturePropertyNames();
+                    foreach (var textProp in textProps)
+                    {
+                        if (material.GetTexture(textProp) == texture2D)
+                            return material;
+                    }
+                }
+                
+                return null;
             }
         }
 
@@ -479,12 +542,6 @@ namespace LowEndGames.TextureBrowser
             if (texInfo.Material != null)
             {
                 return texInfo.Material;
-            }
-
-            if (HasMaterial(texInfo.Texture, out var material))
-            {
-                texInfo.Material = material;
-                return material;
             }
 
             var shader = Shader.Find(DefaultShader);
@@ -508,45 +565,28 @@ namespace LowEndGames.TextureBrowser
 
             Debug.Log($"[Texture Browser]: Created material at {AssetDatabase.GetAssetPath(newMaterial)}");
             
-            m_materials.Add(newMaterial);
+            m_materialCache.Add(newMaterial);
 
             texInfo.Material = newMaterial;
 
             return newMaterial;
         }
 
-        private bool HasMaterial(Texture2D texture, out Material material)
+        private bool IsTextureInUse(TextureInfo texInfo)
         {
-            var mainTexKeyword = EditorPrefs.GetString(ShaderMainTexKeywordKey, DefaultShaderMainTexKeyword);
-
-            foreach (var m in m_materials)
-            {
-                if (m.HasProperty(mainTexKeyword) && m.GetTexture(mainTexKeyword) == texture)
-                {
-                    material = m;
-                    return true;
-                }
-            }
-
-            material = null;
-            return false;
-        }
-        
-        private bool IsTextureInUse(Texture2D tex)
-        {
-            if (HasMaterial(tex, out var material))
+            if (texInfo.Material)
             {
                 var renderers = FindObjectsByType<Renderer>(FindObjectsInactive.Include, FindObjectsSortMode.None);
 
                 foreach (var r in renderers)
                 {
-                    if (r.sharedMaterials.Contains(material))
+                    if (r.sharedMaterials.Contains(texInfo.Material))
                     {
                         return true;
                     }
                 }
             }
-
+        
             return false;
         }
         

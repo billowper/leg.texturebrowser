@@ -68,6 +68,10 @@
     background-color: rgba(0,0,0,.7);
 }
 
+.info-label {
+    padding: 3px;
+}
+
 .folder-selection{
     flex-grow: 1;
     min-width: 500px;
