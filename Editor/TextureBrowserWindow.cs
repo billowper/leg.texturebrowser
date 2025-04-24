@@ -31,7 +31,7 @@ namespace LowEndGames.TextureBrowser
         private Vector2 m_scroll;
         private TextureInfo m_draggedTexture;
         private Vector2 m_dragStartPosition;
-        private string m_searchString;
+        private string m_searchString = "";
         private Texture2D m_materialIcon;
         private Texture2D m_favouriteIcon;
         private Texture2D m_usedIcon;
@@ -56,7 +56,7 @@ namespace LowEndGames.TextureBrowser
             Used = 1 << 2,
         }
         
-        private class TextureInfo
+        private class TextureInfo : IComparable<TextureInfo>
         {
             public string Name { get; }
             public Texture2D Texture { get; }
@@ -70,6 +70,13 @@ namespace LowEndGames.TextureBrowser
                     name = name.Remove(0, "mat.".Length);
                 Name = name;
                 Texture = tex;
+            }
+
+            public int CompareTo(TextureInfo other)
+            {
+                if (ReferenceEquals(this, other)) return 0;
+                if (other is null) return 1;
+                return string.Compare(Name, other.Name, StringComparison.Ordinal);
             }
         }
 
@@ -382,7 +389,7 @@ namespace LowEndGames.TextureBrowser
 
             foreach (var texInfo in m_data)
             {
-                var matchedSearchTerm = searchTerms.Any(term => texInfo.Texture.name.Contains(term, StringComparison.InvariantCultureIgnoreCase));
+                var matchedSearchTerm = string.IsNullOrEmpty(m_searchString) || searchTerms.Any(term => texInfo.Texture.name.Contains(term, StringComparison.InvariantCultureIgnoreCase));
 
                 if (!matchedSearchTerm)
                 {
@@ -511,6 +518,8 @@ namespace LowEndGames.TextureBrowser
                     m_data.Add(texInfo);
                 }
             }
+            
+            m_data.Sort();
 
             return;
 
