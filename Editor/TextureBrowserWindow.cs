@@ -636,7 +636,9 @@ namespace LowEndGames.TextureBrowser
                 label = "Texture Browser",
                 activateHandler = (_, rootElement) =>
                 {
-                    rootElement.styleSheets.Add(_styleSheet);
+                    if (_styleSheet != null)
+                        rootElement.styleSheets.Add(_styleSheet);
+                    
                     rootElement.WithClasses("settings-container");
                     
                     var textureDirectory = EditorPrefs.GetString(TextureDirectoryKey, DefaultTextureDirectory);
