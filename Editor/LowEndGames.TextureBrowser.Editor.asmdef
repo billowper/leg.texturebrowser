@@ -1,6 +1,7 @@
 {
     "name": "LowEndGames.TextureBrowser.Editor",
     "references": [
+        "Unity.EditorCoroutines.Editor"
     ],
     "includePlatforms": [
         "Editor"
