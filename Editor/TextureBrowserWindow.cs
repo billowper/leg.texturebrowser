@@ -16,7 +16,7 @@ namespace LowEndGames.TextureBrowser
     {
         [SerializeField] private StyleSheet m_styleSheet;
 
-        [MenuItem("Low End Games/Texture Browser")]
+        [MenuItem("LEG/Texture Browser")]
         private static void Open()
         {
             var window = GetWindow<TextureBrowserWindow>();
