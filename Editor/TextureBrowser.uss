@@ -2,6 +2,12 @@
     height: 30px;
 }
 
+.toolbar-button {
+    min-width: 30px;
+    width: 30px;
+    padding: 4px;
+}
+
 .texture-list-container {
     flex-grow: 1;
 }
@@ -20,9 +26,8 @@
 }
 
 .tex-parent {
-    background-size: contain;
-    background-repeat: no-repeat;
     margin: 2px;
+    margin-bottom: 19px;
     flex-direction: column-reverse;
     border-color: rgba(0,0,0,.7);
     border-width: 1px;
@@ -30,32 +35,56 @@
 
 .tex-parent:hover {
     border-color: white;
-    border-width: 1px;
 }
 
 .tex-mat-button {
-    width: 30px;
-    height: 30px;
+    width: 24px;
+    height: 24px;
     position: absolute;
     top: 2px;
-    right: 2px;
+    right: 0px;
+    padding-top: 1px;
+    padding-left: 3px;
+    padding-right: 1px;
+    opacity: 0.2;
     display: none;
+}
+
+.tex-mat-button:hover {
+    opacity: 1;
 }
 
 .tex-parent:hover .tex-mat-button {
     display: initial;
 }
 
+.tex-image {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background-size: contain;
+    background-repeat: repeat;
+    background-size: 32px;
+    --unity-image-size: scale-and-crop;
+}
+
 .tex-fav-button {
-    width: 30px;
-    height: 30px;
+    width: 24px;
+    height: 24px;
     position: absolute;
     top: 2px;
-    left: 2px;
+    left: 0px;
+    padding-left: 1px;
+    padding-right: 1px;
+    opacity: 0.2;
     display: none;
 }
 
-.tex-parent:hover .tex-fav-button{
+.tex-fav-button:hover {
+    opacity: 1;
+}
+
+.tex-parent:hover .tex-fav-button {
     display: initial;
 }
 
@@ -65,26 +94,56 @@
 }
 
 .tex-label {
-    background-color: rgba(0,0,0,.7);
+    height: 16px;
+    background-color: rgba(0,0,0,.4);
+    bottom: -17px;
+    margin-left: -1px;
+    margin-right: -1px;
+    padding-left: 17px;
+    padding-right: 1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tex-label-icon {
+    width: 16px;
+    left: -16px;
+    --unity-image-tint-color: #6BB6D3;
+}
+
+.tex-favourite .tex-label-icon {
+    --unity-image-tint-color: #BF8600;
 }
 
 .info-label {
     padding: 3px;
 }
 
-.folder-selection{
+.path-label {
+    padding: 3px;
+    width: 10px;
     flex-grow: 1;
-    min-width: 500px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    -unity-text-overflow-position: start;
 }
 
-.size-slider{
-    flex-grow: 1;
-    min-width: 300px;
+.preferences-button {
+    min-width: 26px;
 }
 
-.search-field{
+.size-slider {
+    width: 50px;
+}
+
+.search-field {
     flex-grow: 1;
-    min-width: 300px;
+    width: 100px;
+}
+
+.unity-search-field-base__cancel-button {
+    width: 20px;
+    height: 19px;
 }
 
 /* saved search */
@@ -100,7 +159,7 @@
     padding: 4px;
 }
 
-.saved-search-button{
+.saved-search-button {
     height: 24px;
     flex-direction: row;
     padding-left: 10px;
@@ -145,4 +204,3 @@
     -unity-font-style: bold;
     margin-bottom: 10px;
 }
-
