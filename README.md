@@ -26,7 +26,3 @@ Textures pictured in the screenshot are from the wonderful [Torment pack by Stri
 - select a default shader & main texture keyword for generating materials
 
 ![image](https://github.com/user-attachments/assets/af95312e-11fa-4f22-9586-b9ad8433cd77)
-
-If you find this tool useful, feel free to make a donation :)
-
-[![Support me on Ko-fi](https://a11ybadges.com/badge?logo=kofi)](https://ko-fi.com/billowper)
